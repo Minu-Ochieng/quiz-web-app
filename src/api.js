@@ -1,40 +1,21 @@
-import { QUESTION_BANK } from './data/questions';
+const BASE_URL = 'https://the-trivia-api.com/v2/questions';
 
-const BASE_URL = 'https://opentdb.com/api.php';
+// Remembers the ids of questions already shown, so they don't repeat
+// during this session. It resets when you refresh the page.
+const seenIds = new Set();
 
-// true = use our own question bank, false = use the real Open Trivia DB API
-const USE_LOCAL = true;
-
-const NOT_ENOUGH_MESSAGE =
-  'There are not enough questions for this choice. Try fewer questions or another category.';
-
-export function buildUrl(amount, category, difficulty) {
-  let url = `${BASE_URL}?amount=${amount}&type=multiple`;
-  if (category !== 'any') url += `&category=${category}`;
-  if (difficulty !== 'any') url += `&difficulty=${difficulty}`;
+// Builds the full URL from the user's choices
+export function buildUrl(limit, category, difficulty) {
+  let url = `${BASE_URL}?limit=${limit}`;
+  if (category !== 'any') url += `&categories=${category}`;
+  if (difficulty !== 'any') url += `&difficulties=${difficulty}`;
   return url;
 }
 
-function getLocalQuestions(amount, category, difficulty) {
-  const matches = QUESTION_BANK.filter((q) => {
-    const categoryOk = category === 'any' || String(q.categoryId) === String(category);
-    const difficultyOk = difficulty === 'any' || q.difficulty === difficulty;
-    return categoryOk && difficultyOk;
-  });
-
-  if (matches.length < amount) {
-    throw new Error(NOT_ENOUGH_MESSAGE);
-  }
-  return shuffle(matches).slice(0, amount);
-}
-
 export async function fetchQuestions(amount, category, difficulty) {
-  if (USE_LOCAL) {
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    return getLocalQuestions(amount, category, difficulty).map(cleanQuestion);
-  }
-
-  const url = buildUrl(amount, category, difficulty);
+  // Ask for extra questions so we have spares after removing repeats
+  const limit = Math.min(amount * 3, 50);
+  const url = buildUrl(limit, category, difficulty);
 
   let response;
   try {
@@ -52,15 +33,18 @@ export async function fetchQuestions(amount, category, difficulty) {
 
   const data = await response.json();
 
-  if (data.response_code === 1) throw new Error(NOT_ENOUGH_MESSAGE);
-  if (data.response_code === 5) {
-    throw new Error('Too many requests. Please wait a few seconds and try again.');
-  }
-  if (data.response_code !== 0) {
-    throw new Error('Something went wrong while loading the questions.');
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error('No questions found for this choice. Try another category or difficulty.');
   }
 
-  return data.results.map(cleanQuestion);
+  // Prefer questions we have not shown yet, then fill up with old ones if needed
+  const fresh = data.filter((q) => !seenIds.has(q.id));
+  const old = data.filter((q) => seenIds.has(q.id));
+  const chosen = [...fresh, ...old].slice(0, amount);
+
+  chosen.forEach((q) => seenIds.add(q.id));
+
+  return chosen.map(cleanQuestion);
 }
 
 function decodeHtml(text) {
@@ -78,14 +62,16 @@ function shuffle(array) {
   return copy;
 }
 
+// This API names its fields differently from Open Trivia DB,
+// so we convert to the same clean shape the screens already use.
 export function cleanQuestion(raw) {
-  const correct = decodeHtml(raw.correct_answer);
-  const wrong = raw.incorrect_answers.map(decodeHtml);
+  const correct = decodeHtml(raw.correctAnswer);
+  const wrong = raw.incorrectAnswers.map(decodeHtml);
 
   return {
     category: decodeHtml(raw.category),
     difficulty: raw.difficulty,
-    question: decodeHtml(raw.question),
+    question: decodeHtml(raw.question.text),
     correctAnswer: correct,
     answers: shuffle([correct, ...wrong]),
   };

@@ -39,9 +39,7 @@ function App() {
   }
 
   function handleNextLevel(nextDifficulty) {
-    // Our own bank has only 3 questions per category and level,
-    // so we cap at 3. Remove Math.min once you add more questions.
-    handleStart(Math.min(settings.amount, 3), settings.category, nextDifficulty);
+    handleStart(settings.amount, settings.category, nextDifficulty);
   }
 
   function handleNewQuiz() {

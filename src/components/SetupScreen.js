@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CATEGORIES } from '../data/questions';
+import { CATEGORIES } from '../data/categories';
 
 const DIFFICULTIES = [
   { id: 'any', name: 'Any' },
